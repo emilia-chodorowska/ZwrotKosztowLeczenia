@@ -2,4 +2,5 @@
 credentials.json
 config.json
 token.json
-faktury_dane.json
+faktury_dane.json__pycache__/
+debug_screenshot_*.png

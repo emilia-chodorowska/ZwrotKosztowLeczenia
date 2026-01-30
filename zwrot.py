@@ -14,7 +14,7 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
 # Biblioteki AI i PDF
-import google.generativeai as genai
+import anthropic
 import PyPDF2
 
 # --- ZMIENNE KONFIGURACYJNE ---
@@ -57,25 +57,24 @@ def autoryzuj_dysk_google():
         return None
 
 def skonfiguruj_model_ai():
-    """Konfiguruje model AI Gemini na podstawie klucza API z pliku config.json."""
+    """Konfiguruje model AI Claude na podstawie klucza API z pliku config.json."""
     try:
         if not os.path.exists(CONFIG_PLIK):
             raise FileNotFoundError(f"Brak pliku konfiguracyjnego '{CONFIG_PLIK}'. Utwórz go i wklej do niego swój klucz API.")
-        
+
         with open(CONFIG_PLIK, 'r') as f:
             config = json.load(f)
-        
-        api_key = config.get('GEMINI_API_KEY')
-        
-        if not api_key or api_key == "WPISZ_TUTAJ_SWOJ_KLUCZ_API":
-            raise ValueError(f"Nie znaleziono klucza API w pliku '{CONFIG_PLIK}'. Upewnij się, że został poprawnie wklejony.")
-        
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        print("✅ Model Gemini został pomyślnie skonfigurowany.")
-        return model
+
+        api_key = config.get('ANTHROPIC_API_KEY')
+
+        if not api_key:
+            raise ValueError(f"Nie znaleziono klucza ANTHROPIC_API_KEY w pliku '{CONFIG_PLIK}'.")
+
+        client = anthropic.Anthropic(api_key=api_key)
+        print("✅ Klient Claude został pomyślnie skonfigurowany.")
+        return client
     except Exception as e:
-        print(f"BŁĄD: Nie udało się skonfigurować API Gemini. Szczegóły: {e}")
+        print(f"BŁĄD: Nie udało się skonfigurować API Claude. Szczegóły: {e}")
         return None
 
 def odczytaj_tekst_z_pliku_pdf(pdf_bytes):
@@ -93,7 +92,7 @@ def odczytaj_tekst_z_pliku_pdf(pdf_bytes):
         print(f"Błąd podczas odczytu strumienia PDF: {e}")
         return None
 
-def wyodrebnij_dane_z_faktury(model, tekst_faktury):
+def wyodrebnij_dane_z_faktury(client, tekst_faktury):
     """
     Wysyła tekst do AI w celu ekstrakcji danych.
     Zwraca listę obiektów JSON, po jednym dla każdej znalezionej faktury.
@@ -122,16 +121,20 @@ def wyodrebnij_dane_z_faktury(model, tekst_faktury):
     """
     cleaned_response = ""
     try:
-        response = model.generate_content(prompt)
-        cleaned_response = response.text.strip().replace("```json", "").replace("```", "").strip()
+        response = client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        cleaned_response = response.content[0].text.strip().replace("```json", "").replace("```", "").strip()
         # Spodziewamy się listy obiektów
         return json.loads(cleaned_response)
     except Exception as e:
-        print(f"Błąd podczas komunikacji z API Gemini lub parsowania JSON: {e}")
+        print(f"Błąd podczas komunikacji z API Claude lub parsowania JSON: {e}")
         print(f"Otrzymana odpowiedź od AI (nieudane parsowanie): \n---\n{cleaned_response}\n---")
         return None # Zwracamy None w przypadku błędu
 
-def przetwarzaj_faktury_z_dysku(drive_service, model):
+def przetwarzaj_faktury_z_dysku(drive_service, client):
     """Główna funkcja orkiestrująca cały proces."""
     output_json_path = 'faktury_dane.json'
     wszystkie_faktury = []
@@ -174,7 +177,7 @@ def przetwarzaj_faktury_z_dysku(drive_service, model):
             
             if tekst_faktury:
                 # Oczekujemy listy faktur, a nie pojedynczej
-                dane_faktur_z_pliku = wyodrebnij_dane_z_faktury(model, tekst_faktury)
+                dane_faktur_z_pliku = wyodrebnij_dane_z_faktury(client, tekst_faktury)
                 if dane_faktur_z_pliku is not None and isinstance(dane_faktur_z_pliku, list):
                     if dane_faktur_z_pliku:
                         # Używamy extend, aby dodać wszystkie elementy z listy, a nie listę jako pojedynczy element
