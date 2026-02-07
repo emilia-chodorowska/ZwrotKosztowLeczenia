@@ -20,7 +20,7 @@ import PyPDF2
 # --- ZMIENNE KONFIGURACYJNE ---
 
 # 1. Ustawienia dostępu do Dysku Google
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+SCOPES = ['https://www.googleapis.com/auth/drive']
 FOLDER_NAZWA = 'Faktury logopeda'
 TOKEN_PLIK = 'token.json'
 CREDS_PLIK = 'credentials.json'
