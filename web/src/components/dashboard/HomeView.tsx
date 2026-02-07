@@ -13,7 +13,6 @@ interface HomeViewProps {
 
 const LOCAL_SERVER = 'http://localhost:8765'
 const POLL_INTERVAL = 15_000
-const POLL_TIMEOUT = 5 * 60_000
 
 type ActionStatus = 'idle' | 'loading' | 'started' | 'already_running' | 'error'
 type RefreshStatus = ActionStatus | 'polling' | 'done'
@@ -21,18 +20,26 @@ type RefreshStatus = ActionStatus | 'polling' | 'done'
 export function HomeView({ invoices, stats, refetch, onNext }: HomeViewProps) {
   const [luxmedStatus, setLuxmedStatus] = useState<ActionStatus>('idle')
   const [refreshStatus, setRefreshStatus] = useState<RefreshStatus>('idle')
-  const snapshotRef = useRef<string>('')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current)
-    if (timeoutRef.current) clearTimeout(timeoutRef.current)
     pollRef.current = null
-    timeoutRef.current = null
   }, [])
 
   useEffect(() => () => stopPolling(), [stopPolling])
+
+  const checkWorkflow = useCallback(async () => {
+    try {
+      const res = await fetch(`${LOCAL_SERVER}/workflow-status`)
+      const data = await res.json()
+      if (data.status === 'completed') {
+        stopPolling()
+        await refetch()
+        setRefreshStatus(data.conclusion === 'success' ? 'done' : 'error')
+      }
+    } catch { /* keep polling */ }
+  }, [stopPolling, refetch])
 
   const triggerRefresh = async () => {
     setRefreshStatus('loading')
@@ -44,30 +51,12 @@ export function HomeView({ invoices, stats, refetch, onNext }: HomeViewProps) {
         return
       }
 
-      snapshotRef.current = JSON.stringify(invoices)
       setRefreshStatus('polling')
-
-      pollRef.current = setInterval(async () => {
-        await refetch()
-      }, POLL_INTERVAL)
-
-      timeoutRef.current = setTimeout(() => {
-        stopPolling()
-        setRefreshStatus('started')
-      }, POLL_TIMEOUT)
+      pollRef.current = setInterval(checkWorkflow, POLL_INTERVAL)
     } catch {
       setRefreshStatus('error')
     }
   }
-
-  useEffect(() => {
-    if (refreshStatus !== 'polling') return
-    const current = JSON.stringify(invoices)
-    if (snapshotRef.current && current !== snapshotRef.current) {
-      stopPolling()
-      setRefreshStatus('done')
-    }
-  }, [invoices, refreshStatus, stopPolling])
 
   const launchLuxmed = async () => {
     setLuxmedStatus('loading')
@@ -147,9 +136,9 @@ export function HomeView({ invoices, stats, refetch, onNext }: HomeViewProps) {
                 Trwa odswiezanie — dane zaktualizuja sie automatycznie
               </p>
             )}
-            {refreshStatus === 'started' && (
+            {refreshStatus === 'done' && (
               <p className="text-xs text-green-600 mt-2">
-                Przekroczono czas oczekiwania. Przeladuj strone recznie.
+                Dane zostaly zaktualizowane!
               </p>
             )}
             {refreshStatus === 'error' && (

@@ -24,6 +24,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._launch_luxmed()
         elif self.path == '/trigger-refresh':
             self._trigger_refresh()
+        elif self.path == '/workflow-status':
+            self._workflow_status()
         elif self.path == '/status':
             self._status()
         else:
@@ -81,6 +83,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(500, {'status': 'error', 'message': 'gh CLI nie znalezione'})
         except subprocess.TimeoutExpired:
             self._json(500, {'status': 'error', 'message': 'Timeout'})
+
+    def _workflow_status(self):
+        try:
+            result = subprocess.run(
+                ['gh', 'run', 'list', '--workflow=refresh.yml', '--limit=1',
+                 '--json', 'status,conclusion',
+                 '--repo', 'emilia-chodorowska/ZwrotKosztowLeczenia'],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0:
+                runs = json.loads(result.stdout)
+                if runs:
+                    self._json(200, runs[0])
+                else:
+                    self._json(200, {'status': 'unknown'})
+            else:
+                self._json(500, {'status': 'error', 'message': result.stderr.strip()})
+        except Exception:
+            self._json(500, {'status': 'error'})
 
     def _status(self):
         global LUXMED_PROCESS
