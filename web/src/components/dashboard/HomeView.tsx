@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { RefreshCw, Globe, Loader2, Check, AlertCircle, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatPLN, formatDate } from '@/lib/utils'
@@ -7,27 +7,67 @@ import type { Invoice, DashboardStats } from '@/types'
 interface HomeViewProps {
   invoices: Invoice[]
   stats: DashboardStats
+  refetch: () => Promise<void>
   onNext: () => void
 }
 
 const LOCAL_SERVER = 'http://localhost:8765'
+const POLL_INTERVAL = 15_000
+const POLL_TIMEOUT = 5 * 60_000
 
 type ActionStatus = 'idle' | 'loading' | 'started' | 'already_running' | 'error'
+type RefreshStatus = ActionStatus | 'polling' | 'done'
 
-export function HomeView({ invoices, stats, onNext }: HomeViewProps) {
+export function HomeView({ invoices, stats, refetch, onNext }: HomeViewProps) {
   const [luxmedStatus, setLuxmedStatus] = useState<ActionStatus>('idle')
-  const [refreshStatus, setRefreshStatus] = useState<ActionStatus>('idle')
+  const [refreshStatus, setRefreshStatus] = useState<RefreshStatus>('idle')
+  const snapshotRef = useRef<string>('')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current)
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    pollRef.current = null
+    timeoutRef.current = null
+  }, [])
+
+  useEffect(() => () => stopPolling(), [stopPolling])
 
   const triggerRefresh = async () => {
     setRefreshStatus('loading')
     try {
       const res = await fetch(`${LOCAL_SERVER}/trigger-refresh`)
       const data = await res.json()
-      setRefreshStatus(data.status === 'triggered' ? 'started' : 'error')
+      if (data.status !== 'triggered') {
+        setRefreshStatus('error')
+        return
+      }
+
+      snapshotRef.current = JSON.stringify(invoices)
+      setRefreshStatus('polling')
+
+      pollRef.current = setInterval(async () => {
+        await refetch()
+      }, POLL_INTERVAL)
+
+      timeoutRef.current = setTimeout(() => {
+        stopPolling()
+        setRefreshStatus('started')
+      }, POLL_TIMEOUT)
     } catch {
       setRefreshStatus('error')
     }
   }
+
+  useEffect(() => {
+    if (refreshStatus !== 'polling') return
+    const current = JSON.stringify(invoices)
+    if (snapshotRef.current && current !== snapshotRef.current) {
+      stopPolling()
+      setRefreshStatus('done')
+    }
+  }, [invoices, refreshStatus, stopPolling])
 
   const launchLuxmed = async () => {
     setLuxmedStatus('loading')
@@ -88,21 +128,28 @@ export function HomeView({ invoices, stats, onNext }: HomeViewProps) {
               onClick={triggerRefresh}
               variant="outline"
               className="mt-3 gap-2"
-              disabled={refreshStatus === 'loading'}
+              disabled={refreshStatus === 'loading' || refreshStatus === 'polling'}
             >
-              {refreshStatus === 'loading' && <Loader2 className="w-4 h-4 animate-spin" />}
-              {refreshStatus === 'started' && <Check className="w-4 h-4 text-green-500" />}
+              {(refreshStatus === 'loading' || refreshStatus === 'polling') && <Loader2 className="w-4 h-4 animate-spin" />}
+              {(refreshStatus === 'started' || refreshStatus === 'done') && <Check className="w-4 h-4 text-green-500" />}
               {refreshStatus === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
               {refreshStatus === 'idle' && <RefreshCw className="w-4 h-4" />}
               {refreshStatus === 'idle' && 'Odswiez dane'}
               {refreshStatus === 'loading' && 'Uruchamiam...'}
-              {refreshStatus === 'started' && 'Odswiezanie uruchomione!'}
+              {refreshStatus === 'polling' && 'Czekam na dane...'}
+              {refreshStatus === 'started' && 'Odswiezanie uruchomione'}
+              {refreshStatus === 'done' && 'Dane zaktualizowane!'}
               {refreshStatus === 'error' && 'Blad'}
             </Button>
 
+            {refreshStatus === 'polling' && (
+              <p className="text-xs text-purple-600 mt-2">
+                Trwa odswiezanie — dane zaktualizuja sie automatycznie
+              </p>
+            )}
             {refreshStatus === 'started' && (
               <p className="text-xs text-green-600 mt-2">
-                Dane beda gotowe za ok. 1-2 min. Przeladuj strone po chwili.
+                Przekroczono czas oczekiwania. Przeladuj strone recznie.
               </p>
             )}
             {refreshStatus === 'error' && (

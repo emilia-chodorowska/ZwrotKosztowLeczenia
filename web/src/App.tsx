@@ -8,7 +8,7 @@ type Step = 'home' | 'step1' | 'step2'
 
 function App() {
   const [step, setStep] = useState<Step>('home')
-  const { invoices, stats, loading, error } = useInvoiceData()
+  const { invoices, stats, loading, error, refetch } = useInvoiceData()
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -24,7 +24,7 @@ function App() {
         ) : (
           <>
             {step === 'home' && (
-              <HomeView invoices={invoices} stats={stats} onNext={() => setStep('step1')} />
+              <HomeView invoices={invoices} stats={stats} refetch={refetch} onNext={() => setStep('step1')} />
             )}
             {step === 'step1' && (
               <StepOne invoices={invoices} onNext={() => setStep('step2')} />
