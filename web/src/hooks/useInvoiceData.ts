@@ -7,8 +7,8 @@ export function useInvoiceData() {
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  const fetchData = async () => {
-    setLoading(true)
+  const fetchData = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const response = await fetch(
         `${import.meta.env.BASE_URL}faktury_dane.json?t=${Date.now()}`
@@ -19,11 +19,13 @@ export function useInvoiceData() {
       setLastUpdated(new Date())
       setError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Nieznany blad')
+      if (!silent) setError(e instanceof Error ? e.message : 'Nieznany blad')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
+
+  const refetch = () => fetchData(true)
 
   useEffect(() => { fetchData() }, [])
 
@@ -60,5 +62,5 @@ export function useInvoiceData() {
     return { totalAmount, invoiceCount, averageAmount, dateRange, monthlyBreakdown }
   }, [invoices])
 
-  return { invoices, stats, loading, error, lastUpdated, refetch: fetchData }
+  return { invoices, stats, loading, error, lastUpdated, refetch }
 }
