@@ -1,0 +1,53 @@
+name: Odswiez dane faktur
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Decode secrets
+        run: |
+          echo "${{ secrets.CONFIG_JSON }}" | base64 -d > config.json
+          echo "${{ secrets.CREDENTIALS_JSON }}" | base64 -d > credentials.json
+          echo "${{ secrets.TOKEN_JSON }}" | base64 -d > token.json
+
+      - name: Run zwrot.py
+        run: python zwrot.py
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Copy invoice data
+        run: cp faktury_dane.json web/public/faktury_dane.json
+
+      - name: Build web app
+        working-directory: web
+        run: npm run build
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./web/dist

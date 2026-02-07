@@ -2,5 +2,12 @@
 credentials.json
 config.json
 token.json
-faktury_dane.json__pycache__/
+faktury_dane.json
+__pycache__/
 debug_screenshot_*.png
+venv/
+
+# Web app
+web/node_modules/
+web/dist/
+web/public/faktury_dane.json
