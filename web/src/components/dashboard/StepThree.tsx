@@ -38,23 +38,15 @@ const WLASCICIEL = 'Emilia Chodorowska'
 
 export function StepThree({ onBack, onNext, onHome }: StepThreeProps) {
   const [mergeState, setMergeState] = useState<MergeState>('idle')
-  const [mergeInfo, setMergeInfo] = useState('')
 
   const handleMerge = async () => {
     setMergeState('loading')
     try {
       const res = await fetch('http://localhost:8765/merge-pdfs')
       const data = await res.json()
-      if (data.status === 'ok') {
-        setMergeState('done')
-        setMergeInfo(`${data.pages} stron · ${data.files} faktur`)
-      } else {
-        setMergeState('error')
-        setMergeInfo(data.message || 'Błąd')
-      }
+      setMergeState(data.status === 'ok' ? 'done' : 'error')
     } catch {
       setMergeState('error')
-      setMergeInfo('Serwer niedostępny')
     }
   }
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, ArrowLeft, ChevronLeft, CalendarDays, Check, Copy } from 'lucide-react'
+import { ArrowRight, ArrowLeft, CalendarDays, Check, Copy } from 'lucide-react'
 import type { Invoice } from '@/types'
 import { Button } from '@/components/ui/button'
 
