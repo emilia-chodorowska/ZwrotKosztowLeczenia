@@ -1,63 +1,54 @@
 [
     {
-        "numer": "03/01/2026",
+        "numer": "01/02/2026",
         "liczba_uslug": 1,
-        "data_wystawienia": "2026-01-02",
-        "data_wykonania_uslugi": "2026-01-02",
+        "data_wystawienia": "2026-02-28",
+        "data_wykonania_uslugi": "2026-02-14",
         "miasto_wykonania": "Szczecin",
         "cena_jednostkowa": 130.0,
-        "kwota_faktury": 130.0
+        "kwota_faktury": 140.0
     },
     {
-        "numer": "04/01/2026",
+        "numer": "02/02/2026",
         "liczba_uslug": 1,
-        "data_wystawienia": "2026-01-03",
-        "data_wykonania_uslugi": "2026-01-03",
+        "data_wystawienia": "2026-02-28",
+        "data_wykonania_uslugi": "2026-02-21",
         "miasto_wykonania": "Szczecin",
         "cena_jednostkowa": 130.0,
-        "kwota_faktury": 130.0
+        "kwota_faktury": 140.0
     },
     {
-        "numer": "05/01/2026",
+        "numer": "03/02/2026",
         "liczba_uslug": 1,
-        "data_wystawienia": "2026-01-07",
-        "data_wykonania_uslugi": "2026-01-07",
+        "data_wystawienia": "2026-02-28",
+        "data_wykonania_uslugi": "2026-02-28",
         "miasto_wykonania": "Szczecin",
         "cena_jednostkowa": 130.0,
-        "kwota_faktury": 130.0
+        "kwota_faktury": 140.0
     },
     {
-        "numer": "06/01/2026",
+        "numer": "2/03/2026",
         "liczba_uslug": 1,
-        "data_wystawienia": "2026-01-11",
-        "data_wykonania_uslugi": "2026-01-11",
+        "data_wystawienia": "2026-03-20",
+        "data_wykonania_uslugi": "2026-03-07",
         "miasto_wykonania": "Szczecin",
         "cena_jednostkowa": 140.0,
         "kwota_faktury": 140.0
     },
     {
-        "numer": "07/01/2026",
+        "numer": "3/03/2026",
         "liczba_uslug": 1,
-        "data_wystawienia": "2026-01-14",
-        "data_wykonania_uslugi": "2026-01-14",
+        "data_wystawienia": "2026-03-20",
+        "data_wykonania_uslugi": "2026-03-14",
         "miasto_wykonania": "Szczecin",
         "cena_jednostkowa": 140.0,
         "kwota_faktury": 140.0
     },
     {
-        "numer": "08/01/2026",
+        "numer": "4/03/2026",
         "liczba_uslug": 1,
-        "data_wystawienia": "2026-01-17",
-        "data_wykonania_uslugi": "2026-01-17",
-        "miasto_wykonania": "Szczecin",
-        "cena_jednostkowa": 140.0,
-        "kwota_faktury": 140.0
-    },
-    {
-        "numer": "09/01/2026",
-        "liczba_uslug": 1,
-        "data_wystawienia": "2026-01-24",
-        "data_wykonania_uslugi": "2026-01-24",
+        "data_wystawienia": "2026-03-20",
+        "data_wykonania_uslugi": "2026-03-21",
         "miasto_wykonania": "Szczecin",
         "cena_jednostkowa": 140.0,
         "kwota_faktury": 140.0
