@@ -29,6 +29,8 @@ except ImportError:
 
 PORT = 8765
 LUXMED_PROCESS = None
+REFRESH_PROCESS = None
+REFRESH_COMPLETED = None  # None | 'success' | 'failure'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 FOLDER_NAZWA = 'Faktury logopeda'
 SERVICE_ACCOUNT_PLIK = 'service-account.json'
@@ -144,39 +146,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._json(200, {'status': 'started', 'message': 'LuxMed uruchomiony'})
 
     def _trigger_refresh(self):
-        try:
-            result = subprocess.run(
-                ['gh', 'workflow', 'run', 'refresh.yml',
-                 '--repo', 'emilia-chodorowska/ZwrotKosztowLeczenia'],
-                capture_output=True, text=True, timeout=15
-            )
-            if result.returncode == 0:
-                self._json(200, {'status': 'triggered', 'message': 'Workflow uruchomiony'})
-            else:
-                self._json(500, {'status': 'error', 'message': result.stderr.strip()})
-        except FileNotFoundError:
-            self._json(500, {'status': 'error', 'message': 'gh CLI nie znalezione'})
-        except subprocess.TimeoutExpired:
-            self._json(500, {'status': 'error', 'message': 'Timeout'})
+        global REFRESH_PROCESS, REFRESH_COMPLETED
+        if REFRESH_PROCESS and REFRESH_PROCESS.poll() is None:
+            self._json(200, {'status': 'triggered', 'message': 'Odświeżanie już trwa'})
+            return
+        venv_python = os.path.join(SCRIPT_DIR, 'venv', 'bin', 'python3')
+        python = venv_python if os.path.exists(venv_python) else sys.executable
+        REFRESH_COMPLETED = None
+        REFRESH_PROCESS = subprocess.Popen(
+            [python, os.path.join(SCRIPT_DIR, 'zwrot.py')],
+            cwd=SCRIPT_DIR,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self._json(200, {'status': 'triggered', 'message': 'Przetwarzanie faktur uruchomione'})
 
     def _workflow_status(self):
-        try:
-            result = subprocess.run(
-                ['gh', 'run', 'list', '--workflow=refresh.yml', '--limit=1',
-                 '--json', 'status,conclusion',
-                 '--repo', 'emilia-chodorowska/ZwrotKosztowLeczenia'],
-                capture_output=True, text=True, timeout=15
-            )
-            if result.returncode == 0:
-                runs = json.loads(result.stdout)
-                if runs:
-                    self._json(200, runs[0])
-                else:
-                    self._json(200, {'status': 'unknown'})
+        global REFRESH_PROCESS, REFRESH_COMPLETED
+        if REFRESH_PROCESS is None and REFRESH_COMPLETED is None:
+            self._json(200, {'status': 'unknown', 'conclusion': ''})
+            return
+        if REFRESH_PROCESS is not None:
+            rc = REFRESH_PROCESS.poll()
+            if rc is None:
+                self._json(200, {'status': 'in_progress', 'conclusion': ''})
+                return
+            if rc == 0:
+                src = os.path.join(SCRIPT_DIR, 'faktury_dane.json')
+                dst = os.path.join(STATIC_ROOT, 'faktury_dane.json')
+                try:
+                    if os.path.exists(src):
+                        shutil.copy(src, dst)
+                    REFRESH_COMPLETED = 'success'
+                except OSError:
+                    REFRESH_COMPLETED = 'failure'
             else:
-                self._json(500, {'status': 'error', 'message': result.stderr.strip()})
-        except Exception:
-            self._json(500, {'status': 'error'})
+                REFRESH_COMPLETED = 'failure'
+            REFRESH_PROCESS = None
+        self._json(200, {'status': 'completed', 'conclusion': REFRESH_COMPLETED or ''})
 
     def _status(self):
         global LUXMED_PROCESS
