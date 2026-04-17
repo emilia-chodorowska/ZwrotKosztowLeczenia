@@ -32,7 +32,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <div className="max-w-2xl mx-auto px-4 pt-16 pb-12">
+      <div className="max-w-3xl mx-auto px-4 pt-16 pb-12">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-semibold text-gray-800">
             Zwrot kosztów leczenia
@@ -40,7 +40,7 @@ function App() {
           <p className="text-sm text-gray-400 mt-1">Wykonaj kolejne kroki aby złożyć wniosek</p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 h-[700px] flex flex-col overflow-y-auto">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 min-h-[750px] flex flex-col">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
@@ -64,7 +64,7 @@ function App() {
               <StepThree onBack={() => navigate('step2')} onNext={() => navigate('summary')} onHome={() => navigate('home')} />
             )}
             {step === 'summary' && (
-              <Summary invoices={invoices} stats={stats} onHome={() => navigate('home')} />
+              <Summary invoices={invoices} stats={stats} onBack={() => navigate('step3')} onHome={() => { refetch(); navigate('home') }} />
             )}
           </>
         )}

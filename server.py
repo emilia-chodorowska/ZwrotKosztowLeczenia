@@ -19,7 +19,10 @@ STATIC_ROOT = os.path.join(SCRIPT_DIR, 'web', 'dist')
 STATIC_PREFIX = '/ZwrotKosztowLeczenia/'
 
 try:
-    from google.oauth2 import service_account
+    from google.auth.exceptions import RefreshError
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaIoBaseDownload
     from pypdf import PdfWriter, PdfReader
@@ -33,22 +36,51 @@ REFRESH_PROCESS = None
 REFRESH_COMPLETED = None  # None | 'success' | 'failure'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 FOLDER_NAZWA = 'Faktury logopeda'
-SERVICE_ACCOUNT_PLIK = 'service-account.json'
+TOKEN_PLIK = 'token.json'
+CREDS_PLIK = 'credentials.json'
+
+_DRIVE_SERVICE = None
+_FOLDER_ID = None
 
 
 def get_drive_service():
-    """Autoryzacja Google Drive przez service account."""
-    sa_path = os.path.join(SCRIPT_DIR, SERVICE_ACCOUNT_PLIK)
-    creds = service_account.Credentials.from_service_account_file(sa_path, scopes=SCOPES)
-    return build('drive', 'v3', credentials=creds)
+    """OAuth user-flow. Cache'owany globalnie — creds odświeżają się in-place."""
+    global _DRIVE_SERVICE
+    if _DRIVE_SERVICE is not None:
+        return _DRIVE_SERVICE
+
+    token_path = os.path.join(SCRIPT_DIR, TOKEN_PLIK)
+    creds_path = os.path.join(SCRIPT_DIR, CREDS_PLIK)
+    creds = None
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+        except RefreshError:
+            creds = None
+
+    if not creds or not creds.valid:
+        flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
+        creds = flow.run_local_server(port=0)
+        with open(token_path, 'w') as token:
+            token.write(creds.to_json())
+
+    _DRIVE_SERVICE = build('drive', 'v3', credentials=creds)
+    return _DRIVE_SERVICE
 
 
 def find_folder_id(service):
-    """Znajdź ID folderu 'Faktury logopeda' na GDrive."""
+    """Znajdź ID folderu 'Faktury logopeda' na GDrive. Cache'owany — folder nie zmienia ID."""
+    global _FOLDER_ID
+    if _FOLDER_ID is not None:
+        return _FOLDER_ID
     query = f"mimeType='application/vnd.google-apps.folder' and name='{FOLDER_NAZWA}' and trashed=false"
     results = service.files().list(q=query, fields="files(id)").execute()
     items = results.get('files', [])
-    return items[0]['id'] if items else None
+    _FOLDER_ID = items[0]['id'] if items else None
+    return _FOLDER_ID
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_OPTIONS(self):
@@ -71,6 +103,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._delete_drive_files()
         elif self.path == '/delete-desktop-folder':
             self._delete_desktop_folder()
+        elif self.path == '/check-desktop-folder':
+            self._check_desktop_folder()
         elif self.path == '/' or self.path == STATIC_PREFIX.rstrip('/') or self.path == STATIC_PREFIX:
             self._serve_static('index.html')
         elif self.path.startswith(STATIC_PREFIX):
@@ -150,6 +184,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if REFRESH_PROCESS and REFRESH_PROCESS.poll() is None:
             self._json(200, {'status': 'triggered', 'message': 'Odświeżanie już trwa'})
             return
+        # Pre-flight: zapewnij świeży token.json zanim spawn'ujemy subprocess
+        # (zwrot.py subprocess ma stdout/stderr na DEVNULL — browser flow wisiałby w ciszy).
+        # Przy okazji: jeśli folder Drive jest pusty — short-circuit bez subprocess.
+        if DRIVE_AVAILABLE:
+            try:
+                service = get_drive_service()
+                folder_id = find_folder_id(service)
+                if folder_id:
+                    query = f"'{folder_id}' in parents and mimeType='application/pdf' and trashed=false"
+                    results = service.files().list(q=query, pageSize=1, fields="files(id)").execute()
+                    if not results.get('files'):
+                        for path in (os.path.join(SCRIPT_DIR, 'faktury_dane.json'),
+                                     os.path.join(STATIC_ROOT, 'faktury_dane.json')):
+                            try:
+                                with open(path, 'w', encoding='utf-8') as f:
+                                    f.write('[]')
+                            except OSError:
+                                pass
+                        REFRESH_COMPLETED = 'success'
+                        self._json(200, {'status': 'triggered', 'message': 'Brak faktur na Drive'})
+                        return
+            except Exception as e:
+                self._json(500, {'status': 'error', 'message': f'Autoryzacja Google: {e}'})
+                return
         venv_python = os.path.join(SCRIPT_DIR, 'venv', 'bin', 'python3')
         python = venv_python if os.path.exists(venv_python) else sys.executable
         REFRESH_COMPLETED = None
@@ -250,8 +308,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
             results = service.files().list(q=query, pageSize=100, fields="files(id, name)").execute()
             pliki = results.get('files', [])
 
+            deleted = 0
+            failed = []
             for plik in pliki:
-                service.files().delete(fileId=plik['id']).execute()
+                try:
+                    service.files().update(fileId=plik['id'], body={'trashed': True}).execute()
+                    deleted += 1
+                except Exception:
+                    failed.append(plik['name'])
+
+            if failed:
+                self._json(500, {
+                    'status': 'error',
+                    'message': f'Brak uprawnień do usunięcia {len(failed)} z {len(pliki)} plików — usuń ręcznie w Google Drive (ikona ↗)'
+                })
+                return
+
+            for path in (os.path.join(SCRIPT_DIR, 'faktury_dane.json'),
+                         os.path.join(STATIC_ROOT, 'faktury_dane.json')):
+                try:
+                    with open(path, 'w', encoding='utf-8') as f:
+                        f.write('[]')
+                except OSError:
+                    pass
 
             self._json(200, {'status': 'ok', 'deleted': len(pliki)})
         except Exception as e:
@@ -264,16 +343,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             file_path = desktop / 'faktury_logopeda.pdf'
             deleted = []
 
-            if folder_path.exists():
-                shutil.rmtree(folder_path)
-                deleted.append(str(folder_path))
-            if file_path.exists():
-                file_path.unlink()
-                deleted.append(str(file_path))
+            to_trash = [p for p in (folder_path, file_path) if p.exists()]
+            if to_trash:
+                posix_list = ', '.join(f'POSIX file "{p}"' for p in to_trash)
+                script = f'tell application "Finder" to delete {{{posix_list}}}'
+                subprocess.run(['osascript', '-e', script], check=True)
+                deleted = [str(p) for p in to_trash]
 
             self._json(200, {'status': 'ok', 'deleted': deleted})
         except Exception as e:
             self._json(500, {'status': 'error', 'message': str(e)})
+
+    def _check_desktop_folder(self):
+        desktop = Path.home() / 'Desktop'
+        exists = (desktop / 'faktury logopeda').exists() or (desktop / 'faktury_logopeda.pdf').exists()
+        self._json(200, {'exists': exists})
 
     def log_message(self, format, *args):
         print(f"[ZwrotApp] {args[0]}")

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { RefreshCw, Globe, Loader2, Check, AlertCircle, FileText, ExternalLink } from 'lucide-react'
+import { RefreshCw, Globe, Loader2, Check, AlertCircle, FileText, ExternalLink, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatPLN, formatDate } from '@/lib/utils'
 import type { Invoice, DashboardStats } from '@/types'
@@ -12,7 +12,7 @@ interface HomeViewProps {
 }
 
 const LOCAL_SERVER = 'http://localhost:8765'
-const POLL_INTERVAL = 15_000
+const POLL_INTERVAL = 1500
 
 type ActionStatus = 'idle' | 'loading' | 'started' | 'already_running' | 'error'
 type RefreshStatus = ActionStatus | 'polling' | 'done'
@@ -53,6 +53,7 @@ export function HomeView({ invoices, stats, refetch, onNext }: HomeViewProps) {
       }
 
       setRefreshStatus('polling')
+      checkWorkflow()
       pollRef.current = setInterval(checkWorkflow, POLL_INTERVAL)
     } catch {
       setRefreshStatus('error')
@@ -82,8 +83,10 @@ export function HomeView({ invoices, stats, refetch, onNext }: HomeViewProps) {
                   Łączna kwota: <span className="font-medium text-gray-900">{formatPLN(stats.totalAmount)}</span>
                 </p>
               </div>
+            ) : refreshStatus === 'done' ? (
+              <p className="text-sm text-amber-600 mt-2">Brak faktur na Drive — dodaj PDF-y do folderu "Faktury logopeda"</p>
             ) : (
-              <p className="text-sm text-amber-600 mt-2">Brak danych — odśwież faktury</p>
+              <p className="text-sm text-gray-500 mt-2">Kliknij "Odśwież dane" aby pobrać faktury z Drive</p>
             )}
           </div>
         </div>
@@ -106,14 +109,17 @@ export function HomeView({ invoices, stats, refetch, onNext }: HomeViewProps) {
               disabled={refreshStatus === 'loading' || refreshStatus === 'polling'}
             >
               {(refreshStatus === 'loading' || refreshStatus === 'polling') && <Loader2 className="w-4 h-4 animate-spin" />}
-              {(refreshStatus === 'started' || refreshStatus === 'done') && <Check className="w-4 h-4 text-green-500" />}
+              {refreshStatus === 'started' && <Check className="w-4 h-4 text-green-500" />}
+              {refreshStatus === 'done' && invoices.length > 0 && <Check className="w-4 h-4 text-green-500" />}
+              {refreshStatus === 'done' && invoices.length === 0 && <AlertCircle className="w-4 h-4 text-amber-500" />}
               {refreshStatus === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
               {refreshStatus === 'idle' && <RefreshCw className="w-4 h-4" />}
               {refreshStatus === 'idle' && 'Odśwież dane'}
               {refreshStatus === 'loading' && 'Uruchamiam...'}
               {refreshStatus === 'polling' && 'Czekam na dane...'}
               {refreshStatus === 'started' && 'Odświeżanie uruchomione'}
-              {refreshStatus === 'done' && 'Dane zaktualizowane!'}
+              {refreshStatus === 'done' && invoices.length > 0 && 'Dane zaktualizowane!'}
+              {refreshStatus === 'done' && invoices.length === 0 && 'Drive pusty'}
               {refreshStatus === 'error' && 'Błąd'}
             </Button>
 
@@ -122,9 +128,14 @@ export function HomeView({ invoices, stats, refetch, onNext }: HomeViewProps) {
                 Trwa odświeżanie — dane zaktualizują się automatycznie
               </p>
             )}
-            {refreshStatus === 'done' && (
+            {refreshStatus === 'done' && invoices.length > 0 && (
               <p className="text-xs text-green-600 mt-2">
                 Dane zostały zaktualizowane!
+              </p>
+            )}
+            {refreshStatus === 'done' && invoices.length === 0 && (
+              <p className="text-xs text-amber-600 mt-2">
+                Nie znaleziono faktur w folderze "Faktury logopeda" na Drive
               </p>
             )}
             {refreshStatus === 'error' && (
@@ -160,12 +171,17 @@ export function HomeView({ invoices, stats, refetch, onNext }: HomeViewProps) {
       </div>
 
       {/* Dalej */}
-      <Button
-        onClick={onNext}
-        className="mt-6 bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 gap-2 rounded-xl px-8 py-3 text-base w-full shadow-sm cursor-pointer"
-      >
-        Dalej — wypełnij dane
-      </Button>
+      <div className="mt-auto flex gap-3">
+        <div className="flex-1" />
+        <Button
+          onClick={onNext}
+          disabled={invoices.length === 0}
+          className="bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 gap-2 rounded-xl px-8 py-3 text-base flex-1 shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Dalej
+          <ArrowRight className="w-4 h-4" />
+        </Button>
+      </div>
     </div>
   )
 }

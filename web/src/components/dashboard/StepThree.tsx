@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { ArrowLeft, Landmark, Check, Copy, CheckCircle, Download, Loader2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Landmark, Check, Copy, Download, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { playSuccessDing } from '@/lib/sounds'
 
 interface StepThreeProps {
   onBack: () => void
@@ -44,7 +45,12 @@ export function StepThree({ onBack, onNext, onHome }: StepThreeProps) {
     try {
       const res = await fetch('http://localhost:8765/merge-pdfs')
       const data = await res.json()
-      setMergeState(data.status === 'ok' ? 'done' : 'error')
+      if (data.status === 'ok') {
+        setMergeState('done')
+        playSuccessDing()
+      } else {
+        setMergeState('error')
+      }
     } catch {
       setMergeState('error')
     }
@@ -86,41 +92,40 @@ export function StepThree({ onBack, onNext, onHome }: StepThreeProps) {
         </div>
       </div>
 
+      <div className="space-y-1">
+        <button
+          type="button"
+          onClick={handleMerge}
+          disabled={mergeState === 'loading' || mergeState === 'done'}
+          className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+        >
+          {mergeState === 'loading' ? (
+            <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
+          ) : mergeState === 'done' ? (
+            <Check className="w-4 h-4 text-green-600 shrink-0" />
+          ) : (
+            <Download className="w-4 h-4 text-gray-400 shrink-0" />
+          )}
+          <span className={`text-sm ${mergeState === 'done' ? 'text-green-700' : mergeState === 'error' ? 'text-red-600' : 'text-gray-700'}`}>
+            {mergeState === 'loading' ? 'Scalanie...' : mergeState === 'done' ? 'Ściągnięto faktury' : mergeState === 'error' ? 'Błąd — spróbuj ponownie' : 'Ściągnij faktury'}
+          </span>
+        </button>
+      </div>
+
       <div className="mt-auto flex gap-3">
         <Button
           onClick={onBack}
-          className="bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 gap-2 rounded-xl py-3 text-sm flex-1 shadow-sm cursor-pointer"
+          className="bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 gap-2 rounded-xl px-8 py-3 text-base flex-1 shadow-sm cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           Wróć
         </Button>
         <Button
-          onClick={handleMerge}
-          disabled={mergeState === 'loading' || mergeState === 'done'}
-          className={`gap-2 rounded-xl py-3 text-sm flex-1 shadow-sm cursor-pointer border ${
-            mergeState === 'done'
-              ? 'bg-green-50 hover:bg-green-50 text-green-700 border-green-200'
-              : mergeState === 'error'
-                ? 'bg-red-50 hover:bg-red-100 text-red-700 border-red-200'
-                : 'bg-white hover:bg-gray-50 text-gray-900 border-gray-200'
-          }`}
-        >
-          {mergeState === 'loading' ? (
-            <><Loader2 className="w-4 h-4 animate-spin" />Scalanie...</>
-          ) : mergeState === 'done' ? (
-            <><Check className="w-4 h-4" />Zapisano</>
-          ) : mergeState === 'error' ? (
-            <><Download className="w-4 h-4" />Ponów</>
-          ) : (
-            <><Download className="w-4 h-4" />Ściągnij faktury</>
-          )}
-        </Button>
-        <Button
           onClick={onNext}
-          className="bg-green-600 hover:bg-green-700 text-white gap-2 rounded-xl py-3 text-sm flex-1 shadow-sm cursor-pointer"
+          className="bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 gap-2 rounded-xl px-8 py-3 text-base flex-1 shadow-sm cursor-pointer"
         >
-          <CheckCircle className="w-4 h-4" />
-          Wysłany
+          Dalej
+          <ArrowRight className="w-4 h-4" />
         </Button>
       </div>
     </div>

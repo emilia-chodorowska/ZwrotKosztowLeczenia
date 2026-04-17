@@ -3,10 +3,14 @@
 import os
 import io
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 # Biblioteki Google
-from google.oauth2 import service_account
+from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
@@ -20,21 +24,41 @@ import PyPDF2
 # 1. Ustawienia dostępu do Dysku Google
 SCOPES = ['https://www.googleapis.com/auth/drive']
 FOLDER_NAZWA = 'Faktury logopeda'
-SERVICE_ACCOUNT_PLIK = 'service-account.json'
+TOKEN_PLIK = 'token.json'
+CREDS_PLIK = 'credentials.json'
 
 # 2. Plik konfiguracyjny dla klucza API
 CONFIG_PLIK = 'config.json'
 
 def autoryzuj_dysk_google():
-    """Autoryzacja przez service account — bez user consent, bez wygasania tokenów."""
-    if not os.path.exists(SERVICE_ACCOUNT_PLIK):
-        print(f"BŁĄD: Brak pliku '{SERVICE_ACCOUNT_PLIK}'. Pobierz go z Google Cloud Console (IAM → Service accounts → Keys).")
-        return None
+    """OAuth user-flow. Refresh_token w Testing mode wygasa po ~7 dniach — wtedy odpalamy browser."""
+    creds = None
+    if os.path.exists(TOKEN_PLIK):
+        creds = Credentials.from_authorized_user_file(TOKEN_PLIK, SCOPES)
+
+    if creds and creds.valid:
+        pass
+    elif creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+        except RefreshError:
+            creds = None
+
+    if not creds or not creds.valid:
+        if not os.path.exists(CREDS_PLIK):
+            print(f"BŁĄD: Brak pliku '{CREDS_PLIK}'. Pobierz OAuth Client ID (Desktop) z Google Cloud Console.")
+            return None
+        flow = InstalledAppFlow.from_client_secrets_file(CREDS_PLIK, SCOPES)
+        creds = flow.run_local_server(port=0)
+        with open(TOKEN_PLIK, 'w') as token:
+            token.write(creds.to_json())
+    elif creds.valid and os.path.exists(TOKEN_PLIK):
+        with open(TOKEN_PLIK, 'w') as token:
+            token.write(creds.to_json())
+
     try:
-        creds = service_account.Credentials.from_service_account_file(
-            SERVICE_ACCOUNT_PLIK, scopes=SCOPES)
         service = build('drive', 'v3', credentials=creds)
-        print("✅ Autoryzacja Dysku Google zakończona pomyślnie (service account).")
+        print("✅ Autoryzacja Dysku Google zakończona pomyślnie.")
         return service
     except HttpError as error:
         print(f"Wystąpił błąd podczas tworzenia usługi Dysku: {error}")
@@ -132,7 +156,7 @@ def przetwarzaj_faktury_z_dysku(drive_service, client):
         if not items:
             print(f"BŁĄD: Nie znaleziono folderu o nazwie '{FOLDER_NAZWA}' na Twoim Dysku Google.")
             return None
-        
+
         folder_id = items[0]['id']
         print(f"Znaleziono folder '{items[0]['name']}' (ID: {folder_id})")
 
@@ -147,33 +171,39 @@ def przetwarzaj_faktury_z_dysku(drive_service, client):
 
         print(f"\nZnaleziono {len(pliki)} plików PDF. Rozpoczynam przetwarzanie...\n")
 
-        # 3. Przetwarzaj każdy plik
+        # 3a. Pobierz PDF-y i wyciągnij tekst (sekwencyjnie — szybkie).
+        downloaded = []  # [(nazwa, tekst), ...]
         for plik in pliki:
-            print(f"--- Przetwarzam plik: {plik['name']} ---")
+            print(f"--- Pobieram: {plik['name']} ---")
             request = drive_service.files().get_media(fileId=plik['id'])
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
             done = False
-            while done is False:
-                status, done = downloader.next_chunk()
-            
-            tekst_faktury = odczytaj_tekst_z_pliku_pdf(fh.getvalue())
-            
-            if tekst_faktury:
-                # Oczekujemy listy faktur, a nie pojedynczej
-                dane_faktur_z_pliku = wyodrebnij_dane_z_faktury(client, tekst_faktury)
-                if dane_faktur_z_pliku is not None and isinstance(dane_faktur_z_pliku, list):
-                    if dane_faktur_z_pliku:
-                        # Używamy extend, aby dodać wszystkie elementy z listy, a nie listę jako pojedynczy element
-                        wszystkie_faktury.extend(dane_faktur_z_pliku)
-                        print(f"✅ Wyodrębniono {len(dane_faktur_z_pliku)} faktur(y) z tego pliku.")
-                    else:
-                        print("ℹ️ Nie znaleziono żadnych faktur w tym pliku.")
-                else:
-                    print("❌ Nie udało się wyodrębnić danych lub otrzymano niepoprawny format.")
+            while not done:
+                _, done = downloader.next_chunk()
+            tekst = odczytaj_tekst_z_pliku_pdf(fh.getvalue())
+            if tekst:
+                downloaded.append((plik['name'], tekst))
             else:
-                print("❌ Nie udało się odczytać tekstu z pliku PDF.")
-            print("-" * (len(plik['name']) + 22) + "\n")
+                print(f"❌ Nie udało się odczytać tekstu: {plik['name']}")
+
+        # 3b. Claude API równolegle — główny bottleneck.
+        if downloaded:
+            print(f"\nWysyłam {len(downloaded)} dokumentów do Claude równolegle...")
+            def _parse(item):
+                nazwa, tekst = item
+                return nazwa, wyodrebnij_dane_z_faktury(client, tekst)
+            with ThreadPoolExecutor(max_workers=min(6, len(downloaded))) as ex:
+                results = list(ex.map(_parse, downloaded))
+            for nazwa, dane in results:
+                if dane is not None and isinstance(dane, list):
+                    if dane:
+                        wszystkie_faktury.extend(dane)
+                        print(f"✅ {nazwa}: {len(dane)} faktur(y)")
+                    else:
+                        print(f"ℹ️ {nazwa}: brak faktur")
+                else:
+                    print(f"❌ {nazwa}: błąd parsowania")
 
     except HttpError as error:
         print(f"Wystąpił błąd podczas komunikacji z API Dysku Google: {error}")
