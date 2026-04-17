@@ -8,4 +8,4 @@ pypdf
 anthropic
 selenium
 webdriver-manager
-rumps
+rumps; sys_platform == "darwin"
