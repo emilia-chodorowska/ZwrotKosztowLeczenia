@@ -2,6 +2,7 @@
 credentials.json
 config.json
 token.json
+service-account.json
 faktury_dane.json
 __pycache__/
 debug_screenshot_*.png

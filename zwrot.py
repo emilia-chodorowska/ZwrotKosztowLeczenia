@@ -6,9 +6,7 @@ import json
 from datetime import datetime
 
 # Biblioteki Google
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
@@ -22,35 +20,21 @@ import PyPDF2
 # 1. Ustawienia dostępu do Dysku Google
 SCOPES = ['https://www.googleapis.com/auth/drive']
 FOLDER_NAZWA = 'Faktury logopeda'
-TOKEN_PLIK = 'token.json'
-CREDS_PLIK = 'credentials.json'
+SERVICE_ACCOUNT_PLIK = 'service-account.json'
 
 # 2. Plik konfiguracyjny dla klucza API
 CONFIG_PLIK = 'config.json'
 
 def autoryzuj_dysk_google():
-    """Obsługuje proces autoryzacji użytkownika i tworzy obiekt usługi Dysku."""
-    creds = None
-    if os.path.exists(TOKEN_PLIK):
-        creds = Credentials.from_authorized_user_file(TOKEN_PLIK, SCOPES)
-    
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists(CREDS_PLIK):
-                print(f"BŁĄD: Brak pliku '{CREDS_PLIK}'. Pobierz go z Google Cloud Console.")
-                return None
-            flow = InstalledAppFlow.from_client_secrets_file(CREDS_PLIK, SCOPES)
-            creds = flow.run_local_server(port=0)
-        
-        with open(TOKEN_PLIK, 'w') as token:
-            token.write(creds.to_json())
-            print(f"Token autoryzacji zapisany w pliku: {TOKEN_PLIK}")
-
+    """Autoryzacja przez service account — bez user consent, bez wygasania tokenów."""
+    if not os.path.exists(SERVICE_ACCOUNT_PLIK):
+        print(f"BŁĄD: Brak pliku '{SERVICE_ACCOUNT_PLIK}'. Pobierz go z Google Cloud Console (IAM → Service accounts → Keys).")
+        return None
     try:
+        creds = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_PLIK, scopes=SCOPES)
         service = build('drive', 'v3', credentials=creds)
-        print("✅ Autoryzacja Dysku Google zakończona pomyślnie.")
+        print("✅ Autoryzacja Dysku Google zakończona pomyślnie (service account).")
         return service
     except HttpError as error:
         print(f"Wystąpił błąd podczas tworzenia usługi Dysku: {error}")

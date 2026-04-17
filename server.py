@@ -9,14 +9,17 @@ import subprocess
 import sys
 import os
 import io
+import mimetypes
 import shutil
 import threading
 from pathlib import Path
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_ROOT = os.path.join(SCRIPT_DIR, 'web', 'dist')
+STATIC_PREFIX = '/ZwrotKosztowLeczenia/'
+
 try:
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.oauth2 import service_account
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaIoBaseDownload
     from pypdf import PdfWriter, PdfReader
@@ -28,26 +31,13 @@ PORT = 8765
 LUXMED_PROCESS = None
 SCOPES = ['https://www.googleapis.com/auth/drive']
 FOLDER_NAZWA = 'Faktury logopeda'
-TOKEN_PLIK = 'token.json'
-CREDS_PLIK = 'credentials.json'
+SERVICE_ACCOUNT_PLIK = 'service-account.json'
 
 
 def get_drive_service():
-    """Autoryzacja Google Drive — reuse token.json z zwrot.py."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    token_path = os.path.join(script_dir, TOKEN_PLIK)
-    creds_path = os.path.join(script_dir, CREDS_PLIK)
-    creds = None
-    if os.path.exists(token_path):
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(token_path, 'w') as token:
-            token.write(creds.to_json())
+    """Autoryzacja Google Drive przez service account."""
+    sa_path = os.path.join(SCRIPT_DIR, SERVICE_ACCOUNT_PLIK)
+    creds = service_account.Credentials.from_service_account_file(sa_path, scopes=SCOPES)
     return build('drive', 'v3', credentials=creds)
 
 
@@ -79,10 +69,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._delete_drive_files()
         elif self.path == '/delete-desktop-folder':
             self._delete_desktop_folder()
+        elif self.path == '/' or self.path == STATIC_PREFIX.rstrip('/') or self.path == STATIC_PREFIX:
+            self._serve_static('index.html')
+        elif self.path.startswith(STATIC_PREFIX):
+            self._serve_static(self.path[len(STATIC_PREFIX):].split('?', 1)[0])
         else:
             self.send_response(404)
             self._cors()
             self.end_headers()
+
+    def _serve_static(self, rel_path):
+        rel_path = rel_path.lstrip('/') or 'index.html'
+        full_path = os.path.normpath(os.path.join(STATIC_ROOT, rel_path))
+        if not full_path.startswith(STATIC_ROOT + os.sep) and full_path != STATIC_ROOT:
+            self.send_response(403)
+            self._cors()
+            self.end_headers()
+            return
+        if not os.path.isfile(full_path):
+            self.send_response(404)
+            self._cors()
+            self.end_headers()
+            return
+        ctype, _ = mimetypes.guess_type(full_path)
+        ctype = ctype or 'application/octet-stream'
+        try:
+            with open(full_path, 'rb') as f:
+                data = f.read()
+        except OSError:
+            self.send_response(500)
+            self._cors()
+            self.end_headers()
+            return
+        self.send_response(200)
+        self._cors()
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _cors(self):
         self.send_header('Access-Control-Allow-Origin', '*')
